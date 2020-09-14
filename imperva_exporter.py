@@ -223,8 +223,10 @@ def main():
         watch_loop(args.prefix, args.interval, args.overlap, args.threshold,
                    args.prom_port, args.prom_init_hours, args.slack_room, args.slack_team)
     else:
-        for i in get_imperva_events(args.prefix, args.interval):
-            describe_event(i)
+        events, err = get_imperva_events(args.prefix, args.interval)
+        if not err:
+            for event in events:
+                describe_event(event)
 
 
 if __name__ == "__main__":
