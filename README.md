@@ -33,3 +33,13 @@ Slack notifications (watch mode only):
 
 required env vars: IMPERVA_API_ID, IMPERVA_API_KEY, IMPERVA_ACC_ID
 ```
+
+## Exported Prometheus metrics
+
+| Metric Name                    | Description                            |
+| ------------------------------ | -------------------------------------- |
+| `imperva_prefix_ddos_status`   | 0 or 1 when the prefix is under attack |
+| `imperva_prefix_ddos_total`    | Recorded attacks on the prefix (count) |
+| `imperva_api_failure_duration` | Current failure duration in seconds    |
+| `imperva_api_errors_total`     | Recorded API/network erros  (count)    |
+
