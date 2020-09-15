@@ -22,21 +22,22 @@ def unix_timestamp(time_string=None):
 def describe_event(ev):
     description = f'Imperva event `{ev["eventType"]} {ev["eventTarget"]}` happened at `{ev["eventTime"]}`'
 
-    if ev['eventType'].startswith('DDOS_START'):
+    if ev.get('suspectedTarget'):
         description += '\nPossible attack target: `{} via {}`'.format(
             ev['suspectedTarget'].get('DST_IP'), ev['suspectedTarget'].get('DST_PORT_PROTOCOL')
         )
-    else:
+
+    if ev['eventType'].startswith('DDOS_STOP'):
         description += '\nAttack summary: `bwTotal: {}` `bwBlocked: {}` `ppsTotal: {}` `ppsBlocked: {}`'.format(
             ev.get('bwTotal'), ev.get('bwBlocked'), ev.get('ppsTotal'), ev.get('ppsBlocked')
         )
     LOG.info(description)
 
-    description += '\nDashboard: https://my.imperva.com/infra-protect/dashboard/ip-range/v3?'
-    description += urllib.parse.urlencode({
+    dashboard_url = 'https://my.imperva.com/infra-protect/dashboard/ip-range/v3?'
+    dashboard_url += urllib.parse.urlencode({
         'series': 'Blocked', 'vb': 'Traffic', 'accountId': IMPERVA_ACC_ID, 'rangeIp': ev['eventTarget']
     })
-    return description
+    return f'{description} \nDashboard: <{dashboard_url}|{ev["eventTarget"]}>'
 
 
 def get_imperva_top_target(ev, end_time):
@@ -61,7 +62,7 @@ def get_imperva_top_target(ev, end_time):
     return target
 
 
-def get_imperva_events(prefixes, check_interval):
+def get_imperva_events(prefixes, check_interval, get_top=False):
     events, error_count = [], 0
 
     epoch_time = unix_timestamp()
@@ -80,10 +81,10 @@ def get_imperva_events(prefixes, check_interval):
                     response.raise_for_status()
 
                 json_response = response.json()
-                if json_response['events']:
+                if json_response.get('events'):
                     for ev in sorted(json_response['events'], key=lambda t: t.get('eventTime', 0)):
-                        if ev['eventType'].startswith('DDOS', ):
-                            if ev['eventType'].startswith('DDOS_START'):
+                        if ev['eventType'].startswith('DDOS'):
+                            if get_top and ev['eventType'].startswith('DDOS_START'):
                                 ev['suspectedTarget'] = get_imperva_top_target(ev, end_time)
                             events.append(ev)
             except Exception as e:
@@ -147,7 +148,7 @@ def watch_loop(prefixes, interval, overlap, threshold, prom_port, prom_init_hour
     err_count, missed_beat_multiplier = 0, 1
     last_event_time = 0
     while True:
-        events, errors = get_imperva_events(prefixes, missed_beat_multiplier * interval + overlap)
+        events, errors = get_imperva_events(prefixes, missed_beat_multiplier * interval + overlap, get_top=True)
 
         if errors > 0:
             err_count += errors
@@ -205,9 +206,9 @@ def validate_args(args):
     assert None not in {IMPERVA_API_ID, IMPERVA_API_KEY, IMPERVA_ACC_ID}  # auth always required
     assert args.interval > args.overlap  # compensation overlap can't be >= check interval
     if args.prom_port or args.slack_room:
-        assert args.watch  # slack notifications and prometheus metrics need watch mode (-w)
+        assert args.watch  # Slack notifications and Prometheus metrics need watch mode (-w)
     if args.slack_room:
-        assert SLACK_HOOK_URL  # slack hook url is required to send notifications
+        assert SLACK_HOOK_URL  # Slack hook url is required to send notifications
 
 
 def main():
