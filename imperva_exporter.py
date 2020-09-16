@@ -3,17 +3,17 @@
 from datetime import datetime
 import argparse
 import calendar
-import dateutil.parser
 import logging
 import os
 import time
 import urllib.parse
 
+import dateutil.parser
 import requests
 
 
 def unix_timestamp(time_string=None):
-    if time_string is not None:
+    if time_string:
         return calendar.timegm(dateutil.parser.parse(time_string).utctimetuple())
     else:
         return calendar.timegm(datetime.utcnow().utctimetuple())
@@ -43,11 +43,11 @@ def describe_event(ev):
 def get_imperva_top_target(ev, end_time):
     target = {}
 
-    endpoint_url = 'https://my.imperva.com/api/v1/infra/top-table'
+    endpoint = 'https://my.imperva.com/api/v1/infra/top-table'
     with requests.Session() as imperva:
         for data_type in ['DST_IP', 'DST_PORT_PROTOCOL']:
             try:
-                response = imperva.post(endpoint_url, data={
+                response = imperva.post(endpoint, data={
                     'api_id': IMPERVA_API_ID, 'api_key': IMPERVA_API_KEY, 'account_id': IMPERVA_ACC_ID,
                     'start': unix_timestamp(ev['eventTime']) * 1000, 'end': end_time,
                     'metric_type': 'PPS', 'mitigation_type': 'BLOCK', 'aggregation_type': 'PEAK',
@@ -56,7 +56,7 @@ def get_imperva_top_target(ev, end_time):
                 if not response.ok:
                     response.raise_for_status()
 
-                target[data_type] = (response.json()['stats'][0]['object'])
+                target[data_type] = response.json()['stats'][0]['object']
             except Exception as e:
                 LOG.exception(e)
     return target
@@ -69,11 +69,11 @@ def get_imperva_events(prefixes, check_interval, get_top=False):
     start_time = (epoch_time - check_interval) * 1000
     end_time = epoch_time * 1000
 
-    endpoint_url = 'https://my.imperva.com/api/v1/infra/events'
+    endpoint = 'https://my.imperva.com/api/v1/infra/events'
     with requests.Session() as imperva:
         for prefix in prefixes:
             try:
-                response = imperva.post(endpoint_url, data={
+                response = imperva.post(endpoint, data={
                     'api_id': IMPERVA_API_ID, 'api_key': IMPERVA_API_KEY, 'account_id': IMPERVA_ACC_ID,
                     'ip_prefix': prefix, 'start': start_time, 'end': end_time
                 })
