@@ -63,7 +63,7 @@ def get_imperva_top_target(ev, end_time):
 
 
 def get_imperva_events(prefixes, check_interval, get_top=False):
-    events, error_count = [], 0
+    events, err = [], False
 
     epoch_time = unix_timestamp()
     start_time = (epoch_time - check_interval) * 1000
@@ -71,26 +71,25 @@ def get_imperva_events(prefixes, check_interval, get_top=False):
 
     endpoint = 'https://my.imperva.com/api/v1/infra/events'
     with requests.Session() as imperva:
-        for prefix in prefixes:
-            try:
-                response = imperva.post(endpoint, data={
-                    'api_id': IMPERVA_API_ID, 'api_key': IMPERVA_API_KEY, 'account_id': IMPERVA_ACC_ID,
-                    'ip_prefix': prefix, 'start': start_time, 'end': end_time
-                })
-                if not response.ok:
-                    response.raise_for_status()
+        try:
+            response = imperva.post(endpoint, data={
+                'api_id': IMPERVA_API_ID, 'api_key': IMPERVA_API_KEY, 'account_id': IMPERVA_ACC_ID,
+                'ip_prefix': prefixes, 'start': start_time, 'end': end_time
+            })
+            if not response.ok:
+                response.raise_for_status()
 
-                json_response = response.json()
-                if json_response.get('events'):
-                    for ev in sorted(json_response['events'], key=lambda t: t.get('eventTime', 0)):
-                        if ev['eventType'].startswith('DDOS'):
-                            if get_top and ev['eventType'].startswith('DDOS_START'):
-                                ev['suspectedTarget'] = get_imperva_top_target(ev, end_time)
-                            events.append(ev)
-            except Exception as e:
-                LOG.exception(e)
-                error_count += 1
-    return events, error_count
+            json_response = response.json()
+            if json_response.get('events'):
+                for ev in sorted(json_response['events'], key=lambda t: t.get('eventTime', 0)):
+                    if ev['eventType'].startswith('DDOS'):
+                        if get_top and ev['eventType'].startswith('DDOS_START'):
+                            ev['suspectedTarget'] = get_imperva_top_target(ev, end_time)
+                        events.append(ev)
+        except Exception as e:
+            LOG.exception(e)
+            err = True
+    return events, err
 
 
 def slack_notify(notification, slack_room, slack_team):
@@ -108,7 +107,7 @@ def slack_notify(notification, slack_room, slack_team):
 
 
 def prom_init(prefixes, prom_port, prom_init_hours):
-    from prometheus_client import start_http_server, Gauge, Counter
+    from prometheus_client import start_http_server, generate_latest, Gauge, Counter
 
     prom = {
         'ddos_status': Gauge('imperva_prefix_ddos_status', '1 when the prefix is under attack', ['prefix']),
@@ -116,6 +115,13 @@ def prom_init(prefixes, prom_port, prom_init_hours):
         'failure_duration': Gauge('imperva_api_failure_duration', 'Time without any Imperva data in seconds'),
         'errors_total': Counter('imperva_api_errors', 'Total errors while querying Imperva API')
     }
+
+    for metric in prom.keys():
+        if metric.startswith('ddos'):
+            for prefix in prefixes:
+                generate_latest(prom[metric].labels(prefix=prefix))
+        else:
+            generate_latest(prom[metric])
 
     last_events, errors = get_imperva_events(prefixes, prom_init_hours * 3600)
     if errors > 0:
@@ -148,12 +154,12 @@ def watch_loop(prefixes, interval, overlap, threshold, prom_port, prom_init_hour
     err_count, missed_beat_multiplier = 0, 1
     last_event_time = 0
     while True:
-        events, errors = get_imperva_events(prefixes, missed_beat_multiplier * interval + overlap, get_top=True)
+        events, err = get_imperva_events(prefixes, missed_beat_multiplier * interval + overlap, get_top=True)
 
-        if errors > 0:
-            err_count += errors
+        if err:
+            err_count += 1
             missed_beat_multiplier += 1
-            prom['errors_total'].inc(errors)
+            prom['errors_total'].inc()
             prom['failure_duration'].set(missed_beat_multiplier * interval)
         elif err_count > 0:
             err_count, missed_beat_multiplier = 0, 1
@@ -214,6 +220,7 @@ def validate_args(args):
 def main():
     args = parse_args()
     validate_args(args)
+    prefixes = args.prefix[0]
 
     logging.basicConfig(format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
                         level=logging.DEBUG if args.debug else logging.INFO)
@@ -221,10 +228,10 @@ def main():
     LOG = logging.getLogger(__name__)
 
     if args.watch:
-        watch_loop(args.prefix, args.interval, args.overlap, args.threshold,
+        watch_loop(prefixes, args.interval, args.overlap, args.threshold,
                    args.prom_port, args.prom_init_hours, args.slack_room, args.slack_team)
     else:
-        events, err = get_imperva_events(args.prefix, args.interval)
+        events, err = get_imperva_events(prefixes, args.interval)
         if not err:
             for event in events:
                 describe_event(event)
