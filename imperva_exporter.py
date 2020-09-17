@@ -112,7 +112,7 @@ def prom_init(prefixes, prom_port, prom_init_hours):
 
     prom = {
         'ddos_status': Gauge('imperva_prefix_ddos_status', '1 when the prefix is under attack', ['prefix']),
-        'ddos_total': Counter('imperva_prefix_ddos', 'Recorded attacks on the prefix', ['prefix'], ),
+        'ddos_total': Counter('imperva_prefix_ddos', 'Recorded attacks on the prefix', ['prefix']),
         'failure_duration': Gauge('imperva_api_failure_duration', 'Time without any Imperva data in seconds'),
         'errors_total': Counter('imperva_api_errors', 'Total errors while querying Imperva API')
     }
