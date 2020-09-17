@@ -117,9 +117,12 @@ def prom_init(prefixes, prom_port, prom_init_hours):
         'errors_total': Counter('imperva_api_errors', 'Total errors while querying Imperva API')
     }
 
-    for metric in ['ddos_status', 'ddos_total']:
-        for prefix in prefixes:
-            generate_latest(prom[metric].labels(prefix=prefix))
+    for metric in prom.keys():
+        if metric.startswith('ddos'):
+            for prefix in prefixes:
+                generate_latest(prom[metric].labels(prefix=prefix))
+        else:
+            generate_latest(prom[metric])
 
     last_events, errors = get_imperva_events(prefixes, prom_init_hours * 3600)
     if errors > 0:
