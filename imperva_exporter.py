@@ -108,14 +108,18 @@ def slack_notify(notification, slack_room, slack_team):
 
 
 def prom_init(prefixes, prom_port, prom_init_hours):
-    from prometheus_client import start_http_server, Gauge, Counter
+    from prometheus_client import start_http_server, generate_latest, Gauge, Counter
 
     prom = {
         'ddos_status': Gauge('imperva_prefix_ddos_status', '1 when the prefix is under attack', ['prefix']),
-        'ddos_total': Counter('imperva_prefix_ddos', 'Recorded attacks on the prefix', ['prefix']),
+        'ddos_total': Counter('imperva_prefix_ddos', 'Recorded attacks on the prefix', ['prefix'], ),
         'failure_duration': Gauge('imperva_api_failure_duration', 'Time without any Imperva data in seconds'),
         'errors_total': Counter('imperva_api_errors', 'Total errors while querying Imperva API')
     }
+
+    for prefix in prefixes:
+        for metric in [prom['ddos_status'].labels(prefix=prefix), prom['ddos_total'].labels(prefix=prefix)]:
+            generate_latest(metric)
 
     last_events, errors = get_imperva_events(prefixes, prom_init_hours * 3600)
     if errors > 0:
@@ -214,6 +218,7 @@ def validate_args(args):
 def main():
     args = parse_args()
     validate_args(args)
+    prefixes = args.prefix[0]
 
     logging.basicConfig(format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
                         level=logging.DEBUG if args.debug else logging.INFO)
@@ -221,10 +226,10 @@ def main():
     LOG = logging.getLogger(__name__)
 
     if args.watch:
-        watch_loop(args.prefix, args.interval, args.overlap, args.threshold,
+        watch_loop(prefixes, args.interval, args.overlap, args.threshold,
                    args.prom_port, args.prom_init_hours, args.slack_room, args.slack_team)
     else:
-        events, err = get_imperva_events(args.prefix, args.interval)
+        events, err = get_imperva_events(prefixes, args.interval)
         if not err:
             for event in events:
                 describe_event(event)
