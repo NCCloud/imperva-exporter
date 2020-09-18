@@ -123,8 +123,8 @@ def prom_init(prefixes, prom_port, prom_init_hours):
         else:
             generate_latest(prom[metric])
 
-    last_events, errors = get_imperva_events(prefixes, prom_init_hours * 3600)
-    if errors > 0:
+    last_events, err = get_imperva_events(prefixes, prom_init_hours * 3600)
+    if err:
         LOG.error(f'Unable to load historical context from Imperva for last {prom_init_hours}h')
     else:
         LOG.info(f'Seeded Prometheus metrics with {prom_init_hours}h of Imperva context.')
@@ -235,6 +235,8 @@ def main():
         if not err:
             for event in events:
                 describe_event(event)
+        else:
+            LOG.error('Unable to fetch data from Imperva API')
 
 
 if __name__ == "__main__":
