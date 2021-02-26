@@ -15,8 +15,8 @@ positional arguments:
 optional arguments:
   -h, --help            show this help message and exit
   -w, --watch           keep running and and collect events continuously
-  -i N, --interval N    check last N seconds, default: 60
-  -o N, --overlap N     compensate latency, default: 10 sec (watch mode only)
+  -i N, --interval N    check last N seconds, default: 300
+  -o N, --overlap N     compensate latency, default: 300 sec (watch mode only)
   -t N, --threshold N   report after N fails, default: 100 (watch mode only)
   -v, --debug           enable debug output
 
