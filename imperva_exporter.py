@@ -176,6 +176,7 @@ def watch_loop(prefixes, interval, overlap, threshold, prom_port, prom_init_hour
                 slack_notify(message, slack_room, slack_team)
             err_count = 0
 
+        # TODO: store and destroy event objects on start/stop events
         for event in events:
             event_time = unix_timestamp(event['eventTime'])
             if event_time > last_event_time:
