@@ -35,7 +35,8 @@ def describe_event(ev):
 
     dashboard_url = 'https://my.imperva.com/infra-protect/dashboard/ip-range/v3?'
     dashboard_url += urllib.parse.urlencode({
-        'series': 'Blocked', 'vb': 'Traffic', 'accountId': IMPERVA_ACC_ID, 'rangeIp': ev['eventTarget']
+        'series': 'Blocked', 'vb': 'Traffic', 'accountId': IMPERVA_ACC_ID, 'rangeIp': ev['eventTarget'],
+        'rs':  1000 * (unix_timestamp(ev["eventTime"]) - 480), 're': 1000 * (unix_timestamp() + 480)
     })
     return f'{description} \nDashboard: <{dashboard_url}|{ev["eventTarget"]}>'
 
@@ -56,7 +57,9 @@ def get_imperva_top_target(ev, end_time):
                 if not response.ok:
                     response.raise_for_status()
 
-                target[data_type] = response.json()['stats'][0]['object']
+                stats = response.json()['stats']
+                if stats:
+                    target[data_type] = stats[0]['object']
             except Exception as e:
                 LOG.exception(e)
     return target
@@ -173,6 +176,7 @@ def watch_loop(prefixes, interval, overlap, threshold, prom_port, prom_init_hour
                 slack_notify(message, slack_room, slack_team)
             err_count = 0
 
+        # TODO: store and destroy event objects on start/stop events
         for event in events:
             event_time = unix_timestamp(event['eventTime'])
             if event_time > last_event_time:
@@ -193,8 +197,8 @@ def parse_args():
 
     parser.add_argument('prefix', action='append', nargs='+', help='ip prefix(es), separated by space')
     parser.add_argument('-w', '--watch', action='store_true', help='keep running and and collect events continuously')
-    parser.add_argument('-i', '--interval', type=int, metavar='N', default=60, help='check last N seconds, default: 60')
-    parser.add_argument('-o', '--overlap', type=int, metavar='N', default=10, help='compensate latency, default: 10 sec (watch mode only)')
+    parser.add_argument('-i', '--interval', type=int, metavar='N', default=300, help='check last N seconds, default: 300')
+    parser.add_argument('-o', '--overlap', type=int, metavar='N', default=300, help='compensate latency, default: 300 sec (watch mode only)')
     parser.add_argument('-t', '--threshold', type=int, metavar='N', default=100, help='report after N fails, default: 100 (watch mode only)')
     parser.add_argument('-v', '--debug', action='store_true', help='enable debug output')
 
@@ -210,7 +214,7 @@ def parse_args():
 
 def validate_args(args):
     assert None not in {IMPERVA_API_ID, IMPERVA_API_KEY, IMPERVA_ACC_ID}  # auth always required
-    assert args.interval > args.overlap  # compensation overlap can't be >= check interval
+    assert args.interval >= args.overlap  # compensation overlap should be ≤ check interval
     if args.prom_port or args.slack_room:
         assert args.watch  # Slack notifications and Prometheus metrics need watch mode (-w)
     if args.slack_room:
