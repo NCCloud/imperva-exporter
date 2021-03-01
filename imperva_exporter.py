@@ -35,7 +35,8 @@ def describe_event(ev):
 
     dashboard_url = 'https://my.imperva.com/infra-protect/dashboard/ip-range/v3?'
     dashboard_url += urllib.parse.urlencode({
-        'series': 'Blocked', 'vb': 'Traffic', 'accountId': IMPERVA_ACC_ID, 'rangeIp': ev['eventTarget']
+        'series': 'Blocked', 'vb': 'Traffic', 'accountId': IMPERVA_ACC_ID, 'rangeIp': ev['eventTarget'],
+        'rs':  1000 * (unix_timestamp(ev["eventTime"]) - 480), 're': 1000 * (unix_timestamp() + 480)
     })
     return f'{description} \nDashboard: <{dashboard_url}|{ev["eventTarget"]}>'
 
