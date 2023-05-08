@@ -1,0 +1,25 @@
+# This workflow warns and then closes issues and PRs that have had no activity for a specified amount of time.
+# https://github.com/crazy-matt/manage-stale-branches
+
+name: Stale Branches
+
+on:
+  schedule:
+    - cron: '0 8 * * 1' 
+
+jobs:
+  cleanup_branches:
+    name: "Branch Cleaner"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Manage Stale Branches"
+        id: branch_cleaner
+        uses: crazy-matt/manage-stale-branches@1.0.1
+        with:
+          gh_token: ${{ secrets.GITHUB_TOKEN }}
+          stale_older_than: 120
+          suggestions_older_than: 60
+          archive_stale: true
+          excluded_branches: |
+            haproxy-ddos-mode
+
