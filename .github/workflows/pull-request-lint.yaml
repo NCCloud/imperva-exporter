@@ -14,10 +14,10 @@ jobs:
     steps:
       - uses: morrisoncole/pr-lint-action@v1.5.0
         with:
-          title-regex: "\\[(CU-.+|[nN][oO][cC][aA][rR][dD])\\] .+"
+          title-regex: "\\[(CU-.+|[nN][oO][cC][aA][rR][dD]|[wW][iI][pP])\\] .+"
           on-failed-regex-fail-action: false
           on-failed-regex-request-changes: true
           on-failed-regex-create-review: true
           on-failed-regex-comment:
-            "Pull request title doesn't conform regex: `%regex%`!"
+            "Pull request title doesn't conform regex: `%regex%`! <br /> More info on this: https://collab.namecheap.net/display/CT/Working+together"
           repo-token: "${{ secrets.GITHUB_TOKEN }}"
