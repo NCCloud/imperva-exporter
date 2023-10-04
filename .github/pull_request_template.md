@@ -3,7 +3,7 @@
 
 
 #### Open questions or TODOs before merging if any
-- [ ] Use github checklists. When solved, check the box and explain the answer.
+<!-- - [ ] Use github checklists. When solved, check the box and explain the answer. -->
 
 ## Learning
-_Links to blog posts, patterns, libraries or addons used to solve this problem_
+<!-- _Links to blog posts, patterns, libraries or addons used to solve this problem_ -->
