@@ -91,7 +91,7 @@ def get_imperva_top_target(ev: dict, end_time: int):
     endpoint = f'{BASE_IMPERVA_URL}/api/v1/infra/top-table'
     for data_type in ['DST_IP', 'DST_PORT_PROTOCOL']:
         try:
-            data = {
+            params = {
                 'account_id': IMPERVA_ACC_ID,
                 'start': unix_timestamp(ev['eventTime']) * 1000,
                 'end': end_time,
@@ -103,7 +103,7 @@ def get_imperva_top_target(ev: dict, end_time: int):
                 'data_type': data_type
             }
             json_response = make_imperva_request(
-                endpoint, method="post", data=data
+                endpoint, method="post", params=params
             )
 
             stats = json_response.get('stats', [])
@@ -123,14 +123,14 @@ def get_imperva_events(prefixes, check_interval, get_top=False):
 
     endpoint = f'{BASE_IMPERVA_URL}/api/v1/infra/events'
     try:
-        data = {
+        params = {
             'account_id': IMPERVA_ACC_ID,
             'ip_prefix': prefixes,
             'start': start_time,
             'end': end_time
         }
         json_response = make_imperva_request(
-            endpoint, method="post", data=data
+            endpoint, method="post", params=params
         )
 
         if json_response.get('events'):
