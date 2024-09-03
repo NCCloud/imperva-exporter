@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from datetime import datetime
+from typing import Union
 import argparse
 import calendar
 import logging
@@ -10,6 +11,40 @@ import urllib.parse
 
 import dateutil.parser
 import requests
+from requests.exceptions import HTTPError
+
+IMPERVA_API_ID = os.environ.get('IMPERVA_API_ID')
+IMPERVA_API_KEY = os.environ.get('IMPERVA_API_KEY')
+IMPERVA_ACC_ID = os.environ.get('IMPERVA_ACC_ID')
+SLACK_HOOK_URL = os.environ.get('SLACK_HOOK_URL')
+BASE_IMPERVA_URL = 'https://my.imperva.com'
+
+
+def make_imperva_request(endpoint: str, method: str, data={}, params={}) -> dict:
+    headers = {
+        'x-API-Key': IMPERVA_API_KEY,
+        'x-API-Id': IMPERVA_API_ID,
+        'Content-type': 'application/json'
+    }
+    with requests.Session() as imperva:
+        response = imperva.request(
+            method=method,
+            url=endpoint,
+            data=data,
+            headers=headers,
+            params=params
+        )
+        response.raise_for_status()
+
+        data: dict = response.json()
+        # https://docs.imperva.com/bundle/api-docs/page/api/api-overview-v1.htm
+        if data["res"] != 0:
+            error = data["res_message"]
+            raise HTTPError(
+                f"Request to URL {endpoint} failed with error: {error}"
+            )
+
+        return data
 
 
 def unix_timestamp(time_string=None):
@@ -19,49 +54,63 @@ def unix_timestamp(time_string=None):
         return calendar.timegm(datetime.utcnow().utctimetuple())
 
 
-def describe_event(ev):
-    description = f'Imperva event `{ev["eventType"]} {ev["eventTarget"]}` happened at `{ev["eventTime"]}`'
+def describe_event(ev: dict):
+    description = (
+        f'Imperva event `{ev["eventType"]} {ev["eventTarget"]}` happened at `{ev["eventTime"]}`')
 
     if ev.get('suspectedTarget'):
         description += '\nPossible attack target: `{} via {}`'.format(
-            ev['suspectedTarget'].get('DST_IP'), ev['suspectedTarget'].get('DST_PORT_PROTOCOL')
+            ev['suspectedTarget'].get('DST_IP'),
+            ev['suspectedTarget'].get('DST_PORT_PROTOCOL')
         )
 
     if ev['eventType'].startswith('DDOS_STOP'):
         description += '\nAttack summary: `bwTotal: {}` `bwBlocked: {}` `ppsTotal: {}` `ppsBlocked: {}`'.format(
-            ev.get('bwTotal'), ev.get('bwBlocked'), ev.get('ppsTotal'), ev.get('ppsBlocked')
+            ev.get('bwTotal'),
+            ev.get('bwBlocked'),
+            ev.get('ppsTotal'),
+            ev.get('ppsBlocked')
         )
     LOG.info(description)
 
-    dashboard_url = 'https://my.imperva.com/infra-protect/dashboard/ip-range/v3?'
+    dashboard_url = f'{BASE_IMPERVA_URL}/infra-protect/dashboard/ip-range/v3?'
     dashboard_url += urllib.parse.urlencode({
-        'series': 'Blocked', 'vb': 'Traffic', 'accountId': IMPERVA_ACC_ID, 'rangeIp': ev['eventTarget'],
-        'rs':  1000 * (unix_timestamp(ev["eventTime"]) - 480), 're': 1000 * (unix_timestamp() + 480)
+        'series': 'Blocked',
+        'vb': 'Traffic',
+        'accountId': IMPERVA_ACC_ID,
+        'rangeIp': ev['eventTarget'],
+        'rs':  1000 * (unix_timestamp(ev["eventTime"]) - 480),
+        're': 1000 * (unix_timestamp() + 480)
     })
     return f'{description} \nDashboard: <{dashboard_url}|{ev["eventTarget"]}>'
 
 
-def get_imperva_top_target(ev, end_time):
+def get_imperva_top_target(ev: dict, end_time: int):
     target = {}
 
-    endpoint = 'https://my.imperva.com/api/v1/infra/top-table'
-    with requests.Session() as imperva:
-        for data_type in ['DST_IP', 'DST_PORT_PROTOCOL']:
-            try:
-                response = imperva.post(endpoint, data={
-                    'api_id': IMPERVA_API_ID, 'api_key': IMPERVA_API_KEY, 'account_id': IMPERVA_ACC_ID,
-                    'start': unix_timestamp(ev['eventTime']) * 1000, 'end': end_time,
-                    'metric_type': 'PPS', 'mitigation_type': 'BLOCK', 'aggregation_type': 'PEAK',
-                    'range_type': 'BGP', 'ip_range': ev['eventTarget'], 'data_type': data_type
-                })
-                if not response.ok:
-                    response.raise_for_status()
+    endpoint = f'{BASE_IMPERVA_URL}/api/v1/infra/top-table'
+    for data_type in ['DST_IP', 'DST_PORT_PROTOCOL']:
+        try:
+            data = {
+                'account_id': IMPERVA_ACC_ID,
+                'start': unix_timestamp(ev['eventTime']) * 1000,
+                'end': end_time,
+                'metric_type': 'PPS',
+                'mitigation_type': 'BLOCK',
+                'aggregation_type': 'PEAK',
+                'range_type': 'BGP',
+                'ip_range': ev['eventTarget'],
+                'data_type': data_type
+            }
+            json_response = make_imperva_request(
+                endpoint, method="post", data=data
+            )
 
-                stats = response.json()['stats']
-                if stats:
-                    target[data_type] = stats[0]['object']
-            except Exception as e:
-                LOG.exception(e)
+            stats = json_response.get('stats', [])
+            if stats:
+                target[data_type] = stats[0]['object']
+        except Exception as e:
+            LOG.exception(e)
     return target
 
 
@@ -72,26 +121,28 @@ def get_imperva_events(prefixes, check_interval, get_top=False):
     start_time = (epoch_time - check_interval) * 1000
     end_time = epoch_time * 1000
 
-    endpoint = 'https://my.imperva.com/api/v1/infra/events'
-    with requests.Session() as imperva:
-        try:
-            response = imperva.post(endpoint, data={
-                'api_id': IMPERVA_API_ID, 'api_key': IMPERVA_API_KEY, 'account_id': IMPERVA_ACC_ID,
-                'ip_prefix': prefixes, 'start': start_time, 'end': end_time
-            })
-            if not response.ok:
-                response.raise_for_status()
+    endpoint = f'{BASE_IMPERVA_URL}/api/v1/infra/events'
+    try:
+        data = {
+            'account_id': IMPERVA_ACC_ID,
+            'ip_prefix': prefixes,
+            'start': start_time,
+            'end': end_time
+        }
+        json_response = make_imperva_request(
+            endpoint, method="post", data=data
+        )
 
-            json_response = response.json()
-            if json_response.get('events'):
-                for ev in sorted(json_response['events'], key=lambda t: t.get('eventTime', 0)):
-                    if ev['eventType'].startswith('DDOS'):
-                        if get_top and ev['eventType'].startswith('DDOS_START'):
-                            ev['suspectedTarget'] = get_imperva_top_target(ev, end_time)
-                        events.append(ev)
-        except Exception as e:
-            LOG.exception(e)
-            err = True
+        if json_response.get('events'):
+            for ev in sorted(json_response['events'], key=lambda t: t.get('eventTime', 0)):
+                if ev['eventType'].startswith('DDOS'):
+                    if get_top and ev['eventType'].startswith('DDOS_START'):
+                        ev['suspectedTarget'] = get_imperva_top_target(
+                            ev, end_time)
+                    events.append(ev)
+    except Exception as e:
+        LOG.exception(e)
+        err = True
     return events, err
 
 
@@ -104,7 +155,8 @@ def slack_notify(notification, slack_room, slack_team):
         if response.ok and response.text == 'ok':
             LOG.info(f'Notified #{slack_room}')
         else:
-            LOG.error(f'Slack API error: {response.status_code} {response.text}')
+            LOG.error(
+                f'Slack API error: {response.status_code} {response.text}')
     except Exception as e:
         LOG.exception(e)
 
@@ -112,7 +164,7 @@ def slack_notify(notification, slack_room, slack_team):
 def prom_init(prefixes, prom_port, prom_init_hours):
     from prometheus_client import start_http_server, generate_latest, Gauge, Counter
 
-    prom = {
+    prom: dict[str, Union[Gauge, Counter]] = {
         'ddos_status': Gauge('imperva_prefix_ddos_status', '1 when the prefix is under attack', ['prefix']),
         'ddos_total': Counter('imperva_prefix_ddos', 'Recorded attacks on the prefix', ['prefix']),
         'failure_duration': Gauge('imperva_api_failure_duration', 'Time without any Imperva data in seconds'),
@@ -128,9 +180,11 @@ def prom_init(prefixes, prom_port, prom_init_hours):
 
     last_events, err = get_imperva_events(prefixes, prom_init_hours * 3600)
     if err:
-        LOG.error(f'Unable to load historical context from Imperva for last {prom_init_hours}h')
+        LOG.error(
+            f'Unable to load historical context from Imperva for last {prom_init_hours}h')
     else:
-        LOG.info(f'Seeded Prometheus metrics with {prom_init_hours}h of Imperva context.')
+        LOG.info(
+            f'Seeded Prometheus metrics with {prom_init_hours}h of Imperva context.')
     for event in last_events:
         prom_push_event(prom, event)
 
@@ -152,12 +206,14 @@ def watch_loop(prefixes, interval, overlap, threshold, prom_port, prom_init_hour
         prom = prom_init(prefixes, prom_port, prom_init_hours)
     if slack_room:
         LOG.info(f'Will notify Slack channel #{slack_room} about new events')
-    LOG.info(f'Monitoring events for {prefixes} every {interval}s with {overlap}s overlap')
+    LOG.info(
+        f'Monitoring events for {prefixes} every {interval}s with {overlap}s overlap')
 
     err_count, missed_beat_multiplier = 0, 1
     last_event_time = 0
     while True:
-        events, err = get_imperva_events(prefixes, missed_beat_multiplier * interval + overlap, get_top=True)
+        events, err = get_imperva_events(
+            prefixes, missed_beat_multiplier * interval + overlap, get_top=True)
 
         if err:
             err_count += 1
@@ -170,7 +226,8 @@ def watch_loop(prefixes, interval, overlap, threshold, prom_port, prom_init_hour
             LOG.info('Recovered from failure and caught up with missed time frames')
 
         if err_count >= threshold:
-            message = f'Imperva API consecutive error count reached configured threshold: `{err_count}`'
+            message = (
+                f'Imperva API consecutive error count reached configured threshold: `{err_count}`')
             LOG.error(message)
             if slack_room:
                 slack_notify(message, slack_room, slack_team)
@@ -187,38 +244,54 @@ def watch_loop(prefixes, interval, overlap, threshold, prom_port, prom_init_hour
                 if prom_port:
                     prom_push_event(prom, event)
             else:
-                LOG.debug(f'Already registered `{event["eventType"]} {event["eventTarget"]}` at `{event["eventTime"]}`')
+                LOG.debug(
+                    f'Already registered `{event["eventType"]} {event["eventTarget"]}` at `{event["eventTime"]}`')
         time.sleep(interval)
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Check DDoS events on prefixes protected by Imperva',
-                                     epilog='required env vars: IMPERVA_API_ID, IMPERVA_API_KEY, IMPERVA_ACC_ID')
+    parser = argparse.ArgumentParser(
+        description='Check DDoS events on prefixes protected by Imperva',
+        epilog='required env vars: IMPERVA_API_ID, IMPERVA_API_KEY, IMPERVA_ACC_ID')
 
-    parser.add_argument('prefix', action='append', nargs='+', help='ip prefix(es), separated by space')
-    parser.add_argument('-w', '--watch', action='store_true', help='keep running and and collect events continuously')
-    parser.add_argument('-i', '--interval', type=int, metavar='N', default=300, help='check last N seconds, default: 300')
-    parser.add_argument('-o', '--overlap', type=int, metavar='N', default=300, help='compensate latency, default: 300 sec (watch mode only)')
-    parser.add_argument('-t', '--threshold', type=int, metavar='N', default=100, help='report after N fails, default: 100 (watch mode only)')
-    parser.add_argument('-v', '--debug', action='store_true', help='enable debug output')
+    parser.add_argument('prefix', action='append', nargs='+',
+                        help='ip prefix(es), separated by space')
+    parser.add_argument('-w', '--watch', action='store_true',
+                        help='keep running and and collect events continuously')
+    parser.add_argument('-i', '--interval', type=int, metavar='N',
+                        default=300, help='check last N seconds, default: 300')
+    parser.add_argument('-o', '--overlap', type=int, metavar='N', default=300,
+                        help='compensate latency, default: 300 sec (watch mode only)')
+    parser.add_argument('-t', '--threshold', type=int, metavar='N', default=100,
+                        help='report after N fails, default: 100 (watch mode only)')
+    parser.add_argument('-v', '--debug', action='store_true',
+                        help='enable debug output')
 
-    prom = parser.add_argument_group('Prometheus metrics (watch mode only, needs prometheus_client module)')
-    prom.add_argument('--prom-port', type=int, metavar='PORT', help='export Prometheus metrics on this port')
-    prom.add_argument('--prom-init-hours', type=int, metavar='N', default=24, help='preload N hours of historical context, default: 24')
+    prom = parser.add_argument_group(
+        'Prometheus metrics (watch mode only, needs prometheus_client module)')
+    prom.add_argument('--prom-port', type=int, metavar='PORT',
+                      help='export Prometheus metrics on this port')
+    prom.add_argument('--prom-init-hours', type=int, metavar='N', default=24,
+                      help='preload N hours of historical context, default: 24')
 
     slack = parser.add_argument_group('Slack notifications (watch mode only)')
-    slack.add_argument('--slack-room', metavar='room-name', help='send event notifications to this Slack channel, SLACK_HOOK_URL env must be set')
-    slack.add_argument('--slack-team', metavar='<!subteam^ID|@team>', help='mention this team in the Slack notification')
+    slack.add_argument('--slack-room', metavar='room-name',
+                       help='send event notifications to this Slack channel, SLACK_HOOK_URL env must be set')
+    slack.add_argument('--slack-team', metavar='<!subteam^ID|@team>',
+                       help='mention this team in the Slack notification')
     return parser.parse_args()
 
 
 def validate_args(args):
-    assert None not in {IMPERVA_API_ID, IMPERVA_API_KEY, IMPERVA_ACC_ID}  # auth always required
-    assert args.interval >= args.overlap  # compensation overlap should be ≤ check interval
+    assert IMPERVA_API_ID, "Please set IMPERVA_API_ID"
+    assert IMPERVA_API_KEY, "Please set IMPERVA_API_KEY"
+    assert IMPERVA_ACC_ID, "Please set IMPERVA_ACC_ID"
     if args.prom_port or args.slack_room:
-        assert args.watch  # Slack notifications and Prometheus metrics need watch mode (-w)
+        # Slack notifications and Prometheus metrics need watch mode (-w)
+        assert args.watch, "Please set the -w flag to use Prometheus or Slack integrations"
     if args.slack_room:
-        assert SLACK_HOOK_URL  # Slack hook url is required to send notifications
+        # Slack hook url is required to send notifications
+        assert SLACK_HOOK_URL, "Please set the SLACK_HOOK_URL var to send notifications"
 
 
 def main():
@@ -244,7 +317,4 @@ def main():
 
 
 if __name__ == "__main__":
-    IMPERVA_API_ID, IMPERVA_API_KEY, IMPERVA_ACC_ID = os.environ.get('IMPERVA_API_ID'), os.environ.get('IMPERVA_API_KEY'), os.environ.get('IMPERVA_ACC_ID')
-    SLACK_HOOK_URL = os.environ.get('SLACK_HOOK_URL')
-
     main()
