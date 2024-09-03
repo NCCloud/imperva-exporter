@@ -16,7 +16,7 @@ optional arguments:
   -h, --help            show this help message and exit
   -w, --watch           keep running and and collect events continuously
   -i N, --interval N    check last N seconds, default: 300
-  -o N, --overlap N     compensate latency, default: 300 sec (watch mode only)
+  -o N, --overlap N     compensate latency and event reporting delays, default: 300 sec (watch mode only)
   -t N, --threshold N   report after N fails, default: 100 (watch mode only)
   -v, --debug           enable debug output
 
@@ -41,5 +41,5 @@ required env vars: IMPERVA_API_ID, IMPERVA_API_KEY, IMPERVA_ACC_ID
 | `imperva_prefix_ddos_status`   | 0 or 1 when the prefix is under attack |
 | `imperva_prefix_ddos_total`    | Recorded attacks on the prefix (count) |
 | `imperva_api_failure_duration` | Current failure duration in seconds    |
-| `imperva_api_errors_total`     | Recorded API/network erros  (count)    |
+| `imperva_api_errors_total`     | Recorded API/network errors  (count)   |
 
