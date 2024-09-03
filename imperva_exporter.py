@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
-from datetime import datetime
 from typing import Union
+import datetime
 import argparse
 import calendar
 import logging
@@ -51,7 +51,7 @@ def unix_timestamp(time_string=None):
     if time_string:
         return calendar.timegm(dateutil.parser.parse(time_string).utctimetuple())
     else:
-        return calendar.timegm(datetime.utcnow().utctimetuple())
+        return calendar.timegm(datetime.datetime.now(datetime.UTC).utctimetuple())
 
 
 def describe_event(ev: dict):
