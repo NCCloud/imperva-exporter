@@ -261,7 +261,7 @@ def parse_args():
     parser.add_argument('-i', '--interval', type=int, metavar='N',
                         default=300, help='check last N seconds, default: 300')
     parser.add_argument('-o', '--overlap', type=int, metavar='N', default=300,
-                        help='compensate latency, default: 300 sec (watch mode only)')
+                        help='compensate latency and event reporting delays, default: 300 sec (watch mode only)')
     parser.add_argument('-t', '--threshold', type=int, metavar='N', default=100,
                         help='report after N fails, default: 100 (watch mode only)')
     parser.add_argument('-v', '--debug', action='store_true',
