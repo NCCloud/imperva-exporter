@@ -211,6 +211,7 @@ def watch_loop(prefixes, interval, overlap, threshold, prom_port, prom_init_hour
 
     err_count, missed_beat_multiplier = 0, 1
     last_event_time = 0
+    last_event_target = ""
     while True:
         events, err = get_imperva_events(
             prefixes, missed_beat_multiplier * interval + overlap, get_top=True)
@@ -236,9 +237,13 @@ def watch_loop(prefixes, interval, overlap, threshold, prom_port, prom_init_hour
         # TODO: store and destroy event objects on start/stop events
         for event in events:
             event_time = unix_timestamp(event['eventTime'])
-            if event_time > last_event_time:
+            if event_time > last_event_time or (
+                event_time == last_event_time
+                and event["eventTarget"] != last_event_target
+            ):
                 event_description = describe_event(event)
                 last_event_time = event_time
+                last_event_target = str(event["eventTarget"])
                 if slack_room:
                     slack_notify(event_description, slack_room, slack_team)
                 if prom_port:
