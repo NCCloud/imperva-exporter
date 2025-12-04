@@ -210,8 +210,8 @@ def watch_loop(prefixes, interval, overlap, threshold, prom_port, prom_init_hour
         f'Monitoring events for {prefixes} every {interval}s with {overlap}s overlap')
 
     err_count, missed_beat_multiplier = 0, 1
-    last_event_time = 0
-    last_event_target = ""
+    last_events = {}
+
     while True:
         events, err = get_imperva_events(
             prefixes, missed_beat_multiplier * interval + overlap, get_top=True)
@@ -234,16 +234,21 @@ def watch_loop(prefixes, interval, overlap, threshold, prom_port, prom_init_hour
                 slack_notify(message, slack_room, slack_team)
             err_count = 0
 
-        # TODO: store and destroy event objects on start/stop events
         for event in events:
             event_time = unix_timestamp(event['eventTime'])
+            event_target = str(event['eventTarget'])
+            event_type = str(event['eventType'])
+            
+            last_event = last_events.get(event_target, {})
+            last_event_time = last_event.get('eventTime', 0)
+            last_event_type = last_event.get('eventType', 'PLACEHOLDER')
+
             if event_time > last_event_time or (
-                event_time == last_event_time
-                and event["eventTarget"] != last_event_target
+                # in case DDOS_START and DDOS_STOP events have identical timestamps
+                event_time == last_event_time and event_type != last_event_type
             ):
                 event_description = describe_event(event)
-                last_event_time = event_time
-                last_event_target = str(event["eventTarget"])
+                last_events.update({event_target: {'eventTime': event_time, 'eventType': event_type}})
                 if slack_room:
                     slack_notify(event_description, slack_room, slack_team)
                 if prom_port:
