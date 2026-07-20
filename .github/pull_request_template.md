@@ -1,3 +1,4 @@
+<!-- This file is managed from the NCCloud/infra-github repository! Add your changes there. Any direct changes here will be overwritten. -->
 <!-- Describe the purpose of the PR so that if you looked at it in 6 months time it would be clear from the overview why this was created -->
 ## What does this change resolve?
 
