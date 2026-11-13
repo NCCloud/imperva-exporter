@@ -27,7 +27,7 @@ Prometheus metrics (watch mode only, needs prometheus_client module):
 Slack notifications (watch mode only):
   --slack-room room-name
                         send event notifications to this Slack channel,
-                        SLACK_HOOK_URL env must be set
+                        SLACK_BOT_TOKEN env must be set
   --slack-team <!subteam^ID|@team>
                         mention this team in the Slack notification
 
