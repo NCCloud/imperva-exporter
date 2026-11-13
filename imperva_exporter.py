@@ -16,7 +16,7 @@ from requests.exceptions import HTTPError
 IMPERVA_API_ID = os.environ.get('IMPERVA_API_ID')
 IMPERVA_API_KEY = os.environ.get('IMPERVA_API_KEY')
 IMPERVA_ACC_ID = os.environ.get('IMPERVA_ACC_ID')
-SLACK_HOOK_URL = os.environ.get('SLACK_HOOK_URL')
+SLACK_BOT_TOKEN = os.environ.get('SLACK_BOT_TOKEN')
 BASE_IMPERVA_URL = 'https://my.imperva.com'
 
 
@@ -150,9 +150,11 @@ def slack_notify(notification, slack_room, slack_team):
     if slack_team:
         notification = f'{slack_team} {notification}'
     try:
-        response = requests.post(SLACK_HOOK_URL, headers={'Content-type': 'application/json'},
+        response = requests.post('https://slack.com/api/chat.postMessage',
+                                 headers={'Content-type': 'application/json',
+                                          'Authorization': f'Bearer {SLACK_BOT_TOKEN}'},
                                  json={'channel': f'#{slack_room}', 'text': notification})
-        if response.ok and response.text == 'ok':
+        if response.ok and response.json().get('ok'):
             LOG.info(f'Notified #{slack_room}')
         else:
             LOG.error(
@@ -219,11 +221,13 @@ def watch_loop(prefixes, interval, overlap, threshold, prom_port, prom_init_hour
         if err:
             err_count += 1
             missed_beat_multiplier += 1
-            prom['errors_total'].inc()
-            prom['failure_duration'].set(missed_beat_multiplier * interval)
+            if prom_port:
+                prom['errors_total'].inc()
+                prom['failure_duration'].set(missed_beat_multiplier * interval)
         elif err_count > 0:
             err_count, missed_beat_multiplier = 0, 1
-            prom['failure_duration'].set(0)
+            if prom_port:
+                prom['failure_duration'].set(0)
             LOG.info('Recovered from failure and caught up with missed time frames')
 
         if err_count >= threshold:
@@ -286,7 +290,7 @@ def parse_args():
 
     slack = parser.add_argument_group('Slack notifications (watch mode only)')
     slack.add_argument('--slack-room', metavar='room-name',
-                       help='send event notifications to this Slack channel, SLACK_HOOK_URL env must be set')
+                       help='send event notifications to this Slack channel, SLACK_BOT_TOKEN env must be set')
     slack.add_argument('--slack-team', metavar='<!subteam^ID|@team>',
                        help='mention this team in the Slack notification')
     return parser.parse_args()
@@ -300,8 +304,8 @@ def validate_args(args):
         # Slack notifications and Prometheus metrics need watch mode (-w)
         assert args.watch, "Please set the -w flag to use Prometheus or Slack integrations"
     if args.slack_room:
-        # Slack hook url is required to send notifications
-        assert SLACK_HOOK_URL, "Please set the SLACK_HOOK_URL var to send notifications"
+        # Slack app bot token is required to send notifications
+        assert SLACK_BOT_TOKEN, "Please set the SLACK_BOT_TOKEN var to send notifications"
 
 
 def main():
